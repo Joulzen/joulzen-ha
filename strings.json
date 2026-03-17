@@ -4,7 +4,7 @@
       "invalid_json": "Invalid JSON — please paste a valid household JSON."
     },
     "step": {
-      "user": {
+      "mqtt": {
         "title": "MQTT Configuration",
         "description": "Publishes sensor values via your configured MQTT integration. Configure the broker in Settings → Devices & Services → MQTT first.",
         "data": {

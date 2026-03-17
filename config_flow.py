@@ -1,16 +1,23 @@
 """Config flow for Joulzen integration."""
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 import logging
+import secrets as py_secrets
 from typing import Any
 
 import voluptuous as vol
 
 from homeassistant import config_entries
-from homeassistant.core import callback
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.data_entry_flow import FlowResult, section
-from homeassistant.helpers import selector
+from homeassistant.helpers import config_entry_oauth2_flow, selector
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.config_entry_oauth2_flow import (
+    LocalOAuth2Implementation,
+)
 
 from .component_registry import (
     COMPONENT_TYPE_ORDER,
@@ -25,6 +32,9 @@ from .const import (
     DEFAULT_MQTT_TOPIC,
     DEFAULT_PUBLISH_INTERVAL,
     DOMAIN,
+    OAUTH_CLIENT_ID,
+    OAUTH_CLIENT_SECRET,
+    SUPABASE_URL,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -179,23 +189,125 @@ def _mapping_from_accumulator(accumulator: dict[str, str]) -> str:
 
 
 # ---------------------------------------------------------------------------
+# PKCE OAuth2 implementation
+# ---------------------------------------------------------------------------
+
+class _JoulzenOAuth2Impl(LocalOAuth2Implementation):
+    """LocalOAuth2Implementation with PKCE (S256) for Supabase."""
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        super().__init__(
+            hass,
+            DOMAIN,
+            OAUTH_CLIENT_ID,
+            OAUTH_CLIENT_SECRET,
+            f"{SUPABASE_URL}/auth/v1/oauth/authorize",
+            f"{SUPABASE_URL}/auth/v1/oauth/token",
+        )
+        self._code_verifier: str = ""
+
+    async def async_generate_authorize_url(self, flow_id: str) -> str:
+        """Generate auth URL with PKCE challenge appended."""
+        verifier = (
+            base64.urlsafe_b64encode(py_secrets.token_bytes(32))
+            .rstrip(b"=")
+            .decode()
+        )
+        self._code_verifier = verifier
+        challenge = (
+            base64.urlsafe_b64encode(
+                hashlib.sha256(verifier.encode()).digest()
+            )
+            .rstrip(b"=")
+            .decode()
+        )
+        url = await super().async_generate_authorize_url(flow_id)
+        return (
+            f"{url}&code_challenge={challenge}"
+            "&code_challenge_method=S256"
+        )
+
+    async def async_resolve_external_data(
+        self, external_data: Any
+    ) -> dict:
+        """Exchange auth code for token, including PKCE verifier."""
+        session = async_get_clientsession(self.hass)
+        basic = base64.b64encode(
+            f"{OAUTH_CLIENT_ID}:{OAUTH_CLIENT_SECRET}".encode()
+        ).decode()
+        async with session.post(
+            f"{SUPABASE_URL}/auth/v1/oauth/token",
+            headers={"Authorization": f"Basic {basic}"},
+            data={
+                "grant_type": "authorization_code",
+                "code": external_data["code"],
+                "redirect_uri": self.redirect_uri,
+                "code_verifier": self._code_verifier,
+            },
+        ) as resp:
+            body = await resp.text()
+            if not resp.ok:
+                _LOGGER.error(
+                    "Supabase token exchange failed: status=%s body=%s"
+                    " redirect_uri=%s verifier_len=%d",
+                    resp.status,
+                    body,
+                    self.redirect_uri,
+                    len(self._code_verifier),
+                )
+            resp.raise_for_status()
+            return await resp.json(content_type=None)
+
+
+# ---------------------------------------------------------------------------
 # Config flow
 # ---------------------------------------------------------------------------
 
-class JoulzenConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    """Handle a config flow for Joulzen."""
+class JoulzenConfigFlow(
+    config_entry_oauth2_flow.AbstractOAuth2FlowHandler,
+    domain=DOMAIN,
+):
+    """Handle a config flow for Joulzen (OAuth2 + MQTT + household)."""
 
     VERSION = 2
+    DOMAIN = DOMAIN
 
-    # ------------------------------------------------------------------
-    # Step 1: MQTT settings
-    # ------------------------------------------------------------------
+    @property
+    def logger(self) -> logging.Logger:
+        """Return the logger."""
+        return _LOGGER
 
     async def async_step_user(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Entry point: inject PKCE implementation and start OAuth."""
+        self.flow_impl = _JoulzenOAuth2Impl(self.hass)
+        return await self.async_step_auth()
+
+    # ------------------------------------------------------------------
+    # OAuth2 callback → proceed to MQTT step
+    # ------------------------------------------------------------------
+
+    async def async_oauth_create_entry(
+        self, data: dict[str, Any]
+    ) -> FlowResult:
+        """OAuth complete — store token and move to MQTT configuration."""
+        self._oauth_data = data
+        return self.async_show_form(
+            step_id="mqtt",
+            data_schema=_schema_step1({}),
+            last_step=False,
+        )
+
+    # ------------------------------------------------------------------
+    # Step: MQTT settings (was 'user', renamed to avoid OAuth conflict)
+    # ------------------------------------------------------------------
+
+    async def async_step_mqtt(
         self,
         user_input: dict[str, Any] | None = None,
     ) -> FlowResult:
-        """Step 1: Topic and interval."""
+        """MQTT topic and publish interval."""
         if user_input is not None:
             self._step1_data = user_input
             return self.async_show_form(
@@ -204,7 +316,7 @@ class JoulzenConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 last_step=False,
             )
         return self.async_show_form(
-            step_id="user",
+            step_id="mqtt",
             data_schema=_schema_step1({}),
             last_step=False,
         )
@@ -223,7 +335,7 @@ class JoulzenConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             if user_input.get(_BACK_KEY):
                 return self.async_show_form(
-                    step_id="user",
+                    step_id="mqtt",
                     data_schema=_schema_step1(
                         getattr(self, "_step1_data", {})
                     ),
@@ -325,6 +437,8 @@ class JoulzenConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Build config data and create the entry."""
         step1 = getattr(self, "_step1_data", {})
         data = {
+            # OAuth token data (token + auth_implementation keys)
+            **getattr(self, "_oauth_data", {}),
             CONF_MQTT_TOPIC: step1.get(
                 CONF_MQTT_TOPIC, DEFAULT_MQTT_TOPIC
             ),
