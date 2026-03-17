@@ -1,0 +1,87 @@
+{
+  "config": {
+    "error": {
+      "invalid_json": "Invalid JSON — please paste a valid household JSON."
+    },
+    "step": {
+      "user": {
+        "title": "MQTT Configuration",
+        "description": "Publishes sensor values via your configured MQTT integration. Configure the broker in Settings → Devices & Services → MQTT first.",
+        "data": {
+          "mqtt_topic": "Topic name",
+          "publish_interval": "Publish interval (seconds)"
+        },
+        "data_description": {
+          "mqtt_topic": "e.g. jouli - JSON payload published to this topic",
+          "publish_interval": "How often to publish (default: 60)"
+        }
+      },
+      "household": {
+        "title": "Household Configuration",
+        "description": "Paste the household JSON. One config flow page will be generated per component type that has entries.",
+        "data": {
+          "household_json": "Household JSON",
+          "_back": "← Go back"
+        },
+        "data_description": {
+          "household_json": "Paste the full household JSON object here."
+        }
+      },
+      "ct_grid": { "title": "Grid", "description": "Map Home Assistant entities to grid connection fields.", "data": { "_back": "← Go back" } },
+      "ct_energyCommunity": { "title": "Energy Community", "description": "Map Home Assistant entities to energy community fields.", "data": { "_back": "← Go back" } },
+      "ct_pv": { "title": "Solar PV", "description": "Map Home Assistant entities to solar PV fields.", "data": { "_back": "← Go back" } },
+      "ct_battery": { "title": "Battery", "description": "Map Home Assistant entities to battery storage fields.", "data": { "_back": "← Go back" } },
+      "ct_appliance": { "title": "Appliance", "description": "Map Home Assistant entities to appliance consumption fields.", "data": { "_back": "← Go back" } },
+      "ct_heater": { "title": "Heat Pump / Heater", "description": "Map Home Assistant entities to heat pump or heater fields.", "data": { "_back": "← Go back" } },
+      "ct_districtHeating": { "title": "District Heating", "description": "Map Home Assistant entities to district heating fields.", "data": { "_back": "← Go back" } },
+      "ct_joulzenTank": { "title": "Joulzen Tank", "description": "Map Home Assistant entities to thermal storage tank fields.", "data": { "_back": "← Go back" } },
+      "ct_tankLayer": { "title": "Tank Layer", "description": "Map Home Assistant entities to tank layer temperature fields.", "data": { "_back": "← Go back" } },
+      "ct_thermostat": { "title": "Thermostat", "description": "Map Home Assistant entities to thermostat fields.", "data": { "_back": "← Go back" } },
+      "ct_ev": { "title": "Electric Vehicle", "description": "Map Home Assistant entities to EV charging fields.", "data": { "_back": "← Go back" } },
+      "ct_weather": { "title": "Weather Station", "description": "Map Home Assistant entities to weather observation fields.", "data": { "_back": "← Go back" } },
+      "ct_heatingCircuit": { "title": "Heating Circuit", "description": "Map Home Assistant entities to heating circuit fields.", "data": { "_back": "← Go back" } }
+    },
+    "abort": {
+      "already_configured": "Already configured"
+    }
+  },
+  "options": {
+    "error": {
+      "invalid_json": "Invalid JSON — please paste a valid household JSON."
+    },
+    "step": {
+      "init": {
+        "title": "MQTT Configuration",
+        "description": "Configure MQTT topic and publish interval.",
+        "data": {
+          "mqtt_topic": "Topic name",
+          "publish_interval": "Publish interval (seconds)"
+        }
+      },
+      "household": {
+        "title": "Household Configuration",
+        "description": "Paste the household JSON. One config flow page will be generated per component type that has entries.",
+        "data": {
+          "household_json": "Household JSON",
+          "_back": "← Go back"
+        },
+        "data_description": {
+          "household_json": "Paste the full household JSON object here."
+        }
+      },
+      "ct_grid": { "title": "Grid", "description": "Map Home Assistant entities to grid connection fields.", "data": { "_back": "← Go back" } },
+      "ct_energyCommunity": { "title": "Energy Community", "description": "Map Home Assistant entities to energy community fields.", "data": { "_back": "← Go back" } },
+      "ct_pv": { "title": "Solar PV", "description": "Map Home Assistant entities to solar PV fields.", "data": { "_back": "← Go back" } },
+      "ct_battery": { "title": "Battery", "description": "Map Home Assistant entities to battery storage fields.", "data": { "_back": "← Go back" } },
+      "ct_appliance": { "title": "Appliance", "description": "Map Home Assistant entities to appliance consumption fields.", "data": { "_back": "← Go back" } },
+      "ct_heater": { "title": "Heat Pump / Heater", "description": "Map Home Assistant entities to heat pump or heater fields.", "data": { "_back": "← Go back" } },
+      "ct_districtHeating": { "title": "District Heating", "description": "Map Home Assistant entities to district heating fields.", "data": { "_back": "← Go back" } },
+      "ct_joulzenTank": { "title": "Joulzen Tank", "description": "Map Home Assistant entities to thermal storage tank fields.", "data": { "_back": "← Go back" } },
+      "ct_tankLayer": { "title": "Tank Layer", "description": "Map Home Assistant entities to tank layer temperature fields.", "data": { "_back": "← Go back" } },
+      "ct_thermostat": { "title": "Thermostat", "description": "Map Home Assistant entities to thermostat fields.", "data": { "_back": "← Go back" } },
+      "ct_ev": { "title": "Electric Vehicle", "description": "Map Home Assistant entities to EV charging fields.", "data": { "_back": "← Go back" } },
+      "ct_weather": { "title": "Weather Station", "description": "Map Home Assistant entities to weather observation fields.", "data": { "_back": "← Go back" } },
+      "ct_heatingCircuit": { "title": "Heating Circuit", "description": "Map Home Assistant entities to heating circuit fields.", "data": { "_back": "← Go back" } }
+    }
+  }
+}
