@@ -19,3 +19,6 @@ DATA_COORDINATOR = "coordinator"
 SUPABASE_URL = "https://ybkjacjhjupgiramumlq.supabase.co"
 OAUTH_CLIENT_ID = "41ad739b-53a4-4b23-857c-d96ee481ab37"
 OAUTH_CLIENT_SECRET = "_HiRK4HT_DWFQJsLbck0l5orWVIUfHtQB5TlSi1FoWk"
+
+# Joulzen REST API
+JOULZEN_API_URL = "https://xg5d0ehcxj.execute-api.eu-central-1.amazonaws.com/dev/api"
