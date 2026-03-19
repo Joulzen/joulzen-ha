@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import fields as dc_fields
 from typing import NamedTuple, Type
 
-from ..models.component_types_live import (
+from .models.component_types_live import (
     GridLive,
     EnergyCommunityLive,
     PVLive,
@@ -19,7 +19,7 @@ from ..models.component_types_live import (
     WeatherLive,
     HeatingCircuitLive,
 )
-from ..models.component_types_aggregate import (
+from .models.component_types_aggregate import (
     GridAggregate,
     EnergyCommunityAggregate,
     PVAggregate,

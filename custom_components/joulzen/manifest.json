@@ -1,10 +1,10 @@
 {
   "domain": "joulzen",
   "name": "Joulzen",
-  "codeowners": ["@maristos"],
+  "codeowners": ["@Joulzen"],
   "config_flow": true,
   "dependencies": ["application_credentials", "mqtt"],
-  "documentation": "https://github.com/maristos/joulzen-ha",
+  "documentation": "https://github.com/Joulzen/joulzen-ha",
   "iot_class": "local_polling",
   "requirements": [],
   "version": "0.3.0"
