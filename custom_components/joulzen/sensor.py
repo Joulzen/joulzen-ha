@@ -226,8 +226,8 @@ class JoulzenLiveSensor(
             multi = len(siblings) > 1
             n = siblings.index(comp_id) + 1  # 1-based, no zero padding
 
-            # entity_id: sensor.joulzen_{type}[_{n}]_{fieldname_lower}
-            id_parts = ["joulzen", comp_type]
+            # entity_id: sensor.joulzen_{type_lower}[_{n}]_{fieldname_lower}
+            id_parts = ["joulzen", comp_type.lower()]
             if multi:
                 id_parts.append(str(n))
             id_parts.append(field_name.lower())

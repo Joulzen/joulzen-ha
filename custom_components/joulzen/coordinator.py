@@ -125,6 +125,7 @@ class JoulzenCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         # Extract systemId and component metadata from household JSON
         self.components_info: dict[str, dict[str, str]] = {}
+        self.tank_children: dict[str, list[str]] = {}
         try:
             household = json.loads(config.get(CONF_HOUSEHOLD_JSON, "{}"))
             self._system_id: str = household.get("systemId", "")
@@ -139,6 +140,20 @@ class JoulzenCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                             "type": comp_type,
                             "name": comp.get("name") or label,
                         }
+            # Map each joulzenTank to its ordered layer component IDs
+            for arr in household.get("componentsByType", {}).values():
+                if not isinstance(arr, list):
+                    continue
+                for comp in arr:
+                    if comp.get("type") == "joulzenTank":
+                        tank_id = comp.get("componentId", "")
+                        layers = [
+                            layer.get("componentId", "")
+                            for layer in comp.get("tankLayers", [])
+                            if layer.get("componentId")
+                        ]
+                        if tank_id:
+                            self.tank_children[tank_id] = layers
         except (json.JSONDecodeError, AttributeError):
             self._system_id = ""
 

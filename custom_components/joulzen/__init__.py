@@ -17,6 +17,7 @@ from .const import (
 )
 from .config_flow import JoulzenOAuth2Impl
 from .coordinator import JoulzenCoordinator
+from .dashboard import async_create_dashboard
 
 PLATFORMS = [Platform.SENSOR]
 
@@ -76,6 +77,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     }
 
     await coordinator.async_config_entry_first_refresh()
+    hass.async_create_task(async_create_dashboard(hass, coordinator))
 
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
