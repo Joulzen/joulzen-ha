@@ -220,6 +220,7 @@ class JoulzenCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             entry = {
                 "value": state.state,
                 "unit": state.attributes.get("unit_of_measurement"),
+                "last_updated": state.last_updated.isoformat(),
             }
             results[my_id] = entry
             entities[my_id] = entry
