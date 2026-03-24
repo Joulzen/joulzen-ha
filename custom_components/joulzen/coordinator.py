@@ -9,6 +9,7 @@ from urllib.parse import quote
 
 from homeassistant.components import mqtt
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import config_entry_oauth2_flow
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import (
     DataUpdateCoordinator,
@@ -102,7 +103,12 @@ def _parse_live_response(data: dict) -> dict[str, float]:
 class JoulzenCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Polls Joulzen live API and publishes HA sensor states via MQTT."""
 
-    def __init__(self, hass: HomeAssistant, config: dict[str, Any]) -> None:
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        config: dict[str, Any],
+        oauth_session: config_entry_oauth2_flow.OAuth2Session,
+    ) -> None:
         interval_seconds = config.get(
             CONF_PUBLISH_INTERVAL, DEFAULT_PUBLISH_INTERVAL
         )
@@ -136,10 +142,7 @@ class JoulzenCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         except (json.JSONDecodeError, AttributeError):
             self._system_id = ""
 
-        # OAuth2 access token stored by HA
-        self._access_token: str = (
-            config.get("token", {}).get("access_token", "")
-        )
+        self._oauth_session = oauth_session
 
         _LOGGER.info(
             "Joulzen coordinator: topic=%s system_id=%s",
@@ -153,13 +156,15 @@ class JoulzenCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         now = datetime.now(tz=timezone.utc)
 
         # ── Fetch live data from Joulzen API ─────────────────────────────
-        if self._system_id and self._access_token:
+        if self._system_id:
+            await self._oauth_session.async_ensure_token_valid()
+            access_token = self._oauth_session.token["access_token"]
             url = f"{JOULZEN_API_URL}/live?system_id={quote(self._system_id)}"
             session = async_get_clientsession(self.hass)
             try:
                 async with session.get(
                     url,
-                    headers={"Authorization": f"Bearer {self._access_token}"},
+                    headers={"Authorization": f"Bearer {access_token}"},
                 ) as resp:
                     body = await resp.text()
                     if resp.ok:

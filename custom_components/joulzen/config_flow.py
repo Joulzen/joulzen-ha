@@ -192,7 +192,7 @@ def _mapping_from_accumulator(accumulator: dict[str, str]) -> str:
 # PKCE OAuth2 implementation
 # ---------------------------------------------------------------------------
 
-class _JoulzenOAuth2Impl(LocalOAuth2Implementation):
+class JoulzenOAuth2Impl(LocalOAuth2Implementation):
     """LocalOAuth2Implementation with PKCE (S256) for Supabase."""
 
     def __init__(self, hass: HomeAssistant) -> None:
@@ -227,17 +227,19 @@ class _JoulzenOAuth2Impl(LocalOAuth2Implementation):
             "&code_challenge_method=S256"
         )
 
+    def _basic_auth_header(self) -> str:
+        return base64.b64encode(
+            f"{OAUTH_CLIENT_ID}:{OAUTH_CLIENT_SECRET}".encode()
+        ).decode()
+
     async def async_resolve_external_data(
         self, external_data: Any
     ) -> dict:
         """Exchange auth code for token, including PKCE verifier."""
         session = async_get_clientsession(self.hass)
-        basic = base64.b64encode(
-            f"{OAUTH_CLIENT_ID}:{OAUTH_CLIENT_SECRET}".encode()
-        ).decode()
         async with session.post(
             f"{SUPABASE_URL}/auth/v1/oauth/token",
-            headers={"Authorization": f"Basic {basic}"},
+            headers={"Authorization": f"Basic {self._basic_auth_header()}"},
             data={
                 "grant_type": "authorization_code",
                 "code": external_data["code"],
@@ -257,6 +259,28 @@ class _JoulzenOAuth2Impl(LocalOAuth2Implementation):
                 )
             resp.raise_for_status()
             return await resp.json(content_type=None)
+
+    async def async_refresh_token(self, token: dict) -> dict:
+        """Refresh the access token using Basic auth, as Supabase requires."""
+        session = async_get_clientsession(self.hass)
+        async with session.post(
+            f"{SUPABASE_URL}/auth/v1/oauth/token",
+            headers={"Authorization": f"Basic {self._basic_auth_header()}"},
+            data={
+                "grant_type": "refresh_token",
+                "refresh_token": token["refresh_token"],
+            },
+        ) as resp:
+            if not resp.ok:
+                body = await resp.text()
+                _LOGGER.error(
+                    "Supabase token refresh failed: status=%s body=%s",
+                    resp.status,
+                    body,
+                )
+            resp.raise_for_status()
+            new_token = await resp.json(content_type=None)
+            return {**token, **new_token}
 
 
 # ---------------------------------------------------------------------------
@@ -281,7 +305,7 @@ class JoulzenConfigFlow(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Entry point: inject PKCE implementation and start OAuth."""
-        self.flow_impl = _JoulzenOAuth2Impl(self.hass)
+        self.flow_impl = JoulzenOAuth2Impl(self.hass)
         return await self.async_step_auth()
 
     # ------------------------------------------------------------------

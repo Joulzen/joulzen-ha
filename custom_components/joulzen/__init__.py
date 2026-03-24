@@ -9,11 +9,13 @@ from __future__ import annotations
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import config_entry_oauth2_flow
 from .const import (
     CONF_MQTT_TOPIC,
     DATA_COORDINATOR,
     DOMAIN,
 )
+from .config_flow import JoulzenOAuth2Impl
 from .coordinator import JoulzenCoordinator
 
 PLATFORMS = [Platform.SENSOR]
@@ -21,6 +23,9 @@ PLATFORMS = [Platform.SENSOR]
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     """Set up the Joulzen component (legacy YAML not supported)."""
+    config_entry_oauth2_flow.async_register_implementation(
+        hass, DOMAIN, JoulzenOAuth2Impl(hass)
+    )
     return True
 
 
@@ -56,7 +61,14 @@ async def _async_update_listener(
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Joulzen from a config entry."""
     config = entry.data | entry.options
-    coordinator = JoulzenCoordinator(hass, config)
+    implementation = await (
+        config_entry_oauth2_flow
+        .async_get_config_entry_implementation(hass, entry)
+    )
+    oauth_session = config_entry_oauth2_flow.OAuth2Session(
+        hass, entry, implementation
+    )
+    coordinator = JoulzenCoordinator(hass, config, oauth_session)
 
     # Store coordinator before first refresh so sensor platform can access it
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
