@@ -3,14 +3,12 @@
 DOMAIN = "joulzen"
 
 # Config flow keys
-CONF_MQTT_TOPIC = "mqtt_topic"
 CONF_PUBLISH_INTERVAL = "publish_interval"
 CONF_SENSOR_MAPPING = "sensor_mapping"
 CONF_HOUSEHOLD_JSON = "household_json"
 
 # Defaults
-DEFAULT_MQTT_TOPIC = "jouli"
-DEFAULT_PUBLISH_INTERVAL = 5
+DEFAULT_PUBLISH_INTERVAL = 60
 
 # Data keys
 DATA_COORDINATOR = "coordinator"
@@ -22,3 +20,5 @@ OAUTH_CLIENT_SECRET = "_HiRK4HT_DWFQJsLbck0l5orWVIUfHtQB5TlSi1FoWk"
 
 # Joulzen REST API
 JOULZEN_API_URL = "https://xg5d0ehcxj.execute-api.eu-central-1.amazonaws.com/dev/api"
+# Override source ID
+OVERRIDE_SOURCE_ID = "2feb6c6a-a417-4044-8fc9-2d03fa72932d"

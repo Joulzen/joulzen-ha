@@ -226,6 +226,26 @@ def _build_dashboard_config(
     }
 
 
+async def async_remove_dashboard(hass: HomeAssistant) -> None:
+    """Remove the Joulzen Lovelace dashboard and its sidebar registration."""
+    try:
+        content_store = Store(hass, 1, _LOVELACE_CONTENT_KEY)
+        await content_store.async_remove()
+
+        dashboards_store = Store(hass, 1, _LOVELACE_DASHBOARDS_KEY)
+        data = await dashboards_store.async_load()
+        if data:
+            data["items"] = [
+                d for d in data.get("items", [])
+                if d.get("url_path") != DASHBOARD_URL_PATH
+            ]
+            await dashboards_store.async_save(data)
+
+        _LOGGER.info("Joulzen dashboard removed")
+    except Exception:  # noqa: BLE001
+        _LOGGER.exception("Failed to remove Joulzen dashboard")
+
+
 async def async_create_dashboard(
     hass: HomeAssistant,
     coordinator: JoulzenCoordinator,

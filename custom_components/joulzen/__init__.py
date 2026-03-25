@@ -1,7 +1,6 @@
 """
 The Joulzen custom component.
 
-Config flow based integration with MQTT publishing to a backend.
 Add via Settings → Integrations → Add Integration → Joulzen.
 """
 from __future__ import annotations
@@ -11,13 +10,12 @@ from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_entry_oauth2_flow
 from .const import (
-    CONF_MQTT_TOPIC,
     DATA_COORDINATOR,
     DOMAIN,
 )
 from .config_flow import JoulzenOAuth2Impl
 from .coordinator import JoulzenCoordinator
-from .dashboard import async_create_dashboard
+from .dashboard import async_create_dashboard, async_remove_dashboard
 
 PLATFORMS = [Platform.SENSOR]
 
@@ -29,27 +27,6 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     )
     return True
 
-
-async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Migrate old config to new structure (topic, interval, mapping only)."""
-    if entry.version > 2:
-        return True
-
-    data = dict(entry.data)
-
-    # Extract topic from old config (was mqtt_broker or mqtt_topic)
-    if CONF_MQTT_TOPIC not in data:
-        old_topic = data.pop("mqtt_broker", data.pop("mqtt_topic", "jouli"))
-        data[CONF_MQTT_TOPIC] = (
-            old_topic.split("/")[0] if "/" in str(old_topic) else old_topic
-        )
-
-    # Remove deprecated broker/port/use_ha_mqtt
-    data.pop("mqtt_port", None)
-    data.pop("use_ha_mqtt", None)
-
-    hass.config_entries.async_update_entry(entry, data=data, version=2)
-    return True
 
 
 async def _async_update_listener(
@@ -83,6 +60,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     return True
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Remove dashboard when the config entry is deleted."""
+    await async_remove_dashboard(hass)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

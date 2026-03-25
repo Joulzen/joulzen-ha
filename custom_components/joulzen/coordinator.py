@@ -1,4 +1,4 @@
-"""Coordinator for Joulzen: fetches live API data and publishes via MQTT."""
+"""Coordinator for Joulzen: fetches live API data and posts overrides."""
 from __future__ import annotations
 
 import json
@@ -7,7 +7,6 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 from urllib.parse import quote
 
-from homeassistant.components import mqtt
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_entry_oauth2_flow
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -19,13 +18,12 @@ from homeassistant.helpers.update_coordinator import (
 from .component_registry import extract_components_by_type
 from .const import (
     CONF_HOUSEHOLD_JSON,
-    CONF_MQTT_TOPIC,
     CONF_PUBLISH_INTERVAL,
     CONF_SENSOR_MAPPING,
-    DEFAULT_MQTT_TOPIC,
     DEFAULT_PUBLISH_INTERVAL,
     DOMAIN,
     JOULZEN_API_URL,
+    OVERRIDE_SOURCE_ID,
 )
 
 # Component type → human-readable label
@@ -101,7 +99,7 @@ def _parse_live_response(data: dict) -> dict[str, float]:
 
 
 class JoulzenCoordinator(DataUpdateCoordinator[dict[str, Any]]):
-    """Polls Joulzen live API and publishes HA sensor states via MQTT."""
+    """Polls Joulzen live API and POSTs entity overrides to local service."""
 
     def __init__(
         self,
@@ -121,8 +119,6 @@ class JoulzenCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._sensor_mappings: list[dict[str, str]] = json.loads(
             config.get(CONF_SENSOR_MAPPING, "[]")
         )
-        self._topic_prefix = config.get(CONF_MQTT_TOPIC, DEFAULT_MQTT_TOPIC)
-
         # Extract systemId and component metadata from household JSON
         self.components_info: dict[str, dict[str, str]] = {}
         self.tank_children: dict[str, list[str]] = {}
@@ -160,22 +156,21 @@ class JoulzenCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._oauth_session = oauth_session
 
         _LOGGER.info(
-            "Joulzen coordinator: topic=%s system_id=%s",
-            self._topic_prefix,
+            "Joulzen coordinator: system_id=%s",
             self._system_id,
         )
 
     async def _async_update_data(self) -> dict[str, Any]:
-        """Fetch live data from API and publish sensor states via MQTT."""
+        """Fetch live data from API and POST entity overrides."""
         results: dict[str, Any] = {"live": {}}
         now = datetime.now(tz=timezone.utc)
+        session = async_get_clientsession(self.hass)
 
         # ── Fetch live data from Joulzen API ─────────────────────────────
         if self._system_id:
             await self._oauth_session.async_ensure_token_valid()
             access_token = self._oauth_session.token["access_token"]
             url = f"{JOULZEN_API_URL}/live?system_id={quote(self._system_id)}"
-            session = async_get_clientsession(self.hass)
             try:
                 async with session.get(
                     url,
@@ -198,11 +193,10 @@ class JoulzenCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 raise UpdateFailed(f"Live data request error: {err}") from err
         else:
             _LOGGER.debug(
-                "Skipping live fetch: system_id=%r token_present=%s",
-                self._system_id, bool(self._access_token),
+                "Skipping live fetch: system_id=%r", self._system_id
             )
 
-        # ── Publish HA sensor states via MQTT ────────────────────────────
+        # ── Collect mapped HA entity states ──────────────────────────────
         entities: dict[str, Any] = {}
         for mapping in self._sensor_mappings:
             ha_entity = mapping.get("ha_entity")
@@ -225,18 +219,33 @@ class JoulzenCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             results[my_id] = entry
             entities[my_id] = entry
 
-        payload: dict[str, Any] = {
-            "entities": entities,
-            "timestamp": now.isoformat(),
-        }
-        topic = self._topic_prefix.rstrip("/")
-        try:
-            await mqtt.async_publish(
-                self.hass, topic, json.dumps(payload), qos=0, retain=False
-            )
-            _LOGGER.debug("Published to %s", topic)
-        except Exception as err:  # noqa: BLE001
-            _LOGGER.warning("MQTT publish failed: %s", err)
+        # ── POST entity states to local override endpoint ────────────────
+        if entities and self._system_id:
+            payload: dict[str, Any] = {
+                "sourceId": OVERRIDE_SOURCE_ID,
+                "entities": entities,
+                "timestamp": now.isoformat(),
+            }
+            url = f"{JOULZEN_API_URL}?system_id={quote(self._system_id)}"
+            _LOGGER.debug("Override POST url=%s payload=%s", url, payload)
+            await self._oauth_session.async_ensure_token_valid()
+            access_token = self._oauth_session.token["access_token"]
+            try:
+                async with session.post(
+                    url,
+                    headers={"Authorization": f"Bearer {access_token}"},
+                    json=payload,
+                ) as resp:
+                    if not resp.ok:
+                        body = await resp.text()
+                        _LOGGER.warning(
+                            "Override POST failed: status=%s body=%s",
+                            resp.status, body,
+                        )
+                    else:
+                        _LOGGER.debug("Override POST to %s succeeded", url)
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.warning("Override POST error: %s", err)
 
         results["_last_published"] = now
         return results

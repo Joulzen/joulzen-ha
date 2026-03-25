@@ -4,27 +4,34 @@
       "invalid_json": "Invalid JSON — please paste a valid household JSON."
     },
     "step": {
-      "mqtt": {
-        "title": "MQTT Configuration",
-        "description": "Publishes sensor values via your configured MQTT integration. Configure the broker in Settings → Devices & Services → MQTT first.",
-        "data": {
-          "mqtt_topic": "Topic name",
-          "publish_interval": "Publish interval (seconds)"
-        },
-        "data_description": {
-          "mqtt_topic": "e.g. jouli - JSON payload published to this topic",
-          "publish_interval": "How often to publish (default: 60)"
-        }
-      },
       "household": {
         "title": "Household Configuration",
-        "description": "Paste the household JSON. One config flow page will be generated per component type that has entries.",
+        "description": "Paste the household JSON.",
         "data": {
-          "household_json": "Household JSON",
-          "_back": "← Go back"
+          "household_json": "Household JSON"
         },
         "data_description": {
           "household_json": "Paste the full household JSON object here."
+        }
+      },
+      "select_components": {
+        "title": "Optional: Publish to Joulzen",
+        "description": "Check the components for which you want to select Home Assistant entity overrides. The selected entities are then periodically published to Joulzen and used there for display and optimisation.",
+        "data": {
+          "select_grid": "Grid",
+          "select_energyCommunity": "Energy Community",
+          "select_pv": "Solar PV",
+          "select_battery": "Battery",
+          "select_appliance": "Appliance",
+          "select_heater": "Heat Pump / Heater",
+          "select_districtHeating": "District Heating",
+          "select_joulzenTank": "Joulzen Tank",
+          "select_tankLayer": "Tank Layer",
+          "select_thermostat": "Thermostat",
+          "select_ev": "Electric Vehicle",
+          "select_weather": "Weather Station",
+          "select_heatingCircuit": "Heating Circuit",
+          "_back": "← Go back"
         }
       },
       "ct_grid": { "title": "Grid", "description": "Map Home Assistant entities to grid connection fields.", "data": { "_back": "← Go back" } },
@@ -50,23 +57,34 @@
       "invalid_json": "Invalid JSON — please paste a valid household JSON."
     },
     "step": {
-      "init": {
-        "title": "MQTT Configuration",
-        "description": "Configure MQTT topic and publish interval.",
-        "data": {
-          "mqtt_topic": "Topic name",
-          "publish_interval": "Publish interval (seconds)"
-        }
-      },
       "household": {
         "title": "Household Configuration",
-        "description": "Paste the household JSON. One config flow page will be generated per component type that has entries.",
+        "description": "Paste the household JSON.",
         "data": {
-          "household_json": "Household JSON",
-          "_back": "← Go back"
+          "household_json": "Household JSON"
         },
         "data_description": {
           "household_json": "Paste the full household JSON object here."
+        }
+      },
+      "select_components": {
+        "title": "Publish to Joulzen",
+        "description": "Check the components for which you want to select Home Assistant entity overrides. The selected entities are then periodically published to Joulzen and used there for optimisation.",
+        "data": {
+          "select_grid": "Grid",
+          "select_energyCommunity": "Energy Community",
+          "select_pv": "Solar PV",
+          "select_battery": "Battery",
+          "select_appliance": "Appliance",
+          "select_heater": "Heat Pump / Heater",
+          "select_districtHeating": "District Heating",
+          "select_joulzenTank": "Joulzen Tank",
+          "select_tankLayer": "Tank Layer",
+          "select_thermostat": "Thermostat",
+          "select_ev": "Electric Vehicle",
+          "select_weather": "Weather Station",
+          "select_heatingCircuit": "Heating Circuit",
+          "_back": "← Go back"
         }
       },
       "ct_grid": { "title": "Grid", "description": "Map Home Assistant entities to grid connection fields.", "data": { "_back": "← Go back" } },

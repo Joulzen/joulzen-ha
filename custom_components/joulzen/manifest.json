@@ -3,7 +3,7 @@
   "name": "Joulzen",
   "codeowners": ["@Joulzen"],
   "config_flow": true,
-  "dependencies": ["application_credentials", "mqtt"],
+  "dependencies": ["application_credentials"],
   "documentation": "https://github.com/Joulzen/joulzen-ha",
   "iot_class": "local_polling",
   "requirements": [],

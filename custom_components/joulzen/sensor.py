@@ -156,7 +156,7 @@ async def async_setup_entry(
         hass.data[DOMAIN][entry.entry_id][DATA_COORDINATOR]
     )
 
-    entities: list[SensorEntity] = [MqttLastPublishedSensor(coordinator)]
+    entities: list[SensorEntity] = [LastPublishedSensor(coordinator)]
 
     known_comp_ids = set(coordinator.components_info)
     live_data: dict = (coordinator.data or {}).get("live", {})
@@ -175,13 +175,13 @@ async def async_setup_entry(
     async_add_entities(entities)
 
 
-class MqttLastPublishedSensor(
+class LastPublishedSensor(
     CoordinatorEntity[JoulzenCoordinator], SensorEntity
 ):
-    """Sensor showing when MQTT data was last published."""
+    """Sensor showing when override data was last published."""
 
-    _attr_name = "MQTT last published"
-    _attr_unique_id = "joulzen_mqtt_last_published"
+    _attr_name = "Last published"
+    _attr_unique_id = "joulzen_last_published"
     _attr_device_class = SensorDeviceClass.TIMESTAMP
 
     def __init__(self, coordinator: JoulzenCoordinator) -> None:

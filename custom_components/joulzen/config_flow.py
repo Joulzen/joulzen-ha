@@ -26,10 +26,8 @@ from .component_registry import (
 )
 from .const import (
     CONF_HOUSEHOLD_JSON,
-    CONF_MQTT_TOPIC,
     CONF_PUBLISH_INTERVAL,
     CONF_SENSOR_MAPPING,
-    DEFAULT_MQTT_TOPIC,
     DEFAULT_PUBLISH_INTERVAL,
     DOMAIN,
     OAUTH_CLIENT_ID,
@@ -47,28 +45,10 @@ _BACK_KEY = "_back"
 # Schema helpers
 # ---------------------------------------------------------------------------
 
-def _schema_step1(defaults: dict[str, Any]) -> vol.Schema:
-    """Schema for step 1: topic and interval."""
-    return vol.Schema(
-        {
-            vol.Required(
-                CONF_MQTT_TOPIC,
-                default=defaults.get(CONF_MQTT_TOPIC, DEFAULT_MQTT_TOPIC),
-            ): str,
-            vol.Required(
-                CONF_PUBLISH_INTERVAL,
-                default=defaults.get(
-                    CONF_PUBLISH_INTERVAL, DEFAULT_PUBLISH_INTERVAL
-                ),
-            ): vol.All(vol.Coerce(int), vol.Range(min=5, max=3600)),
-        }
-    )
-
-
 def _schema_step_household(
     default_json: str, include_back: bool = True
 ) -> vol.Schema:
-    """Schema for step 2: paste household JSON."""
+    """Schema for the household JSON paste step."""
     field: Any
     if default_json:
         field = vol.Required(_HOUSEHOLD_KEY, default=default_json)
@@ -83,6 +63,24 @@ def _schema_step_household(
         schema_dict[
             vol.Optional(_BACK_KEY, default=False)
         ] = selector.BooleanSelector()
+    return vol.Schema(schema_dict)
+
+
+def _schema_select_components(
+    type_all: list[str], selected: set[str] | None = None
+) -> vol.Schema:
+    """Schema for the component selection step.
+
+    Each available component type becomes a boolean checkbox.
+    ``selected`` pre-populates checkboxes when the user navigates back.
+    """
+    selected = selected or set()
+    schema_dict: dict = {}
+    for type_name in type_all:
+        schema_dict[
+            vol.Optional(f"select_{type_name}", default=(type_name in selected))
+        ] = selector.BooleanSelector()
+    schema_dict[vol.Optional(_BACK_KEY, default=False)] = selector.BooleanSelector()
     return vol.Schema(schema_dict)
 
 
@@ -291,7 +289,7 @@ class JoulzenConfigFlow(
     config_entry_oauth2_flow.AbstractOAuth2FlowHandler,
     domain=DOMAIN,
 ):
-    """Handle a config flow for Joulzen (OAuth2 + MQTT + household)."""
+    """Handle a config flow for Joulzen (OAuth2 + household)."""
 
     VERSION = 2
     DOMAIN = DOMAIN
@@ -309,63 +307,33 @@ class JoulzenConfigFlow(
         return await self.async_step_auth()
 
     # ------------------------------------------------------------------
-    # OAuth2 callback → proceed to MQTT step
+    # OAuth2 callback → proceed directly to household step (interval
+    # is fixed at DEFAULT_PUBLISH_INTERVAL, no form needed).
     # ------------------------------------------------------------------
 
     async def async_oauth_create_entry(
         self, data: dict[str, Any]
     ) -> FlowResult:
-        """OAuth complete — store token and move to MQTT configuration."""
+        """OAuth complete — store token and move to household configuration."""
         self._oauth_data = data
         return self.async_show_form(
-            step_id="mqtt",
-            data_schema=_schema_step1({}),
+            step_id="household",
+            data_schema=_schema_step_household("", include_back=False),
             last_step=False,
         )
 
     # ------------------------------------------------------------------
-    # Step: MQTT settings (was 'user', renamed to avoid OAuth conflict)
-    # ------------------------------------------------------------------
-
-    async def async_step_mqtt(
-        self,
-        user_input: dict[str, Any] | None = None,
-    ) -> FlowResult:
-        """MQTT topic and publish interval."""
-        if user_input is not None:
-            self._step1_data = user_input
-            return self.async_show_form(
-                step_id="household",
-                data_schema=_schema_step_household("", include_back=True),
-                last_step=False,
-            )
-        return self.async_show_form(
-            step_id="mqtt",
-            data_schema=_schema_step1({}),
-            last_step=False,
-        )
-
-    # ------------------------------------------------------------------
-    # Step 2: Household JSON
+    # Step: Household JSON
     # ------------------------------------------------------------------
 
     async def async_step_household(
         self,
         user_input: dict[str, Any] | None = None,
     ) -> FlowResult:
-        """Step 2: Paste household JSON."""
+        """Step: Paste household JSON."""
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            if user_input.get(_BACK_KEY):
-                return self.async_show_form(
-                    step_id="mqtt",
-                    data_schema=_schema_step1(
-                        getattr(self, "_step1_data", {})
-                    ),
-                    last_step=False,
-                )
-
             raw = user_input.get(_HOUSEHOLD_KEY, "")
             try:
                 household = json.loads(raw)
@@ -373,29 +341,76 @@ class JoulzenConfigFlow(
                 errors[_HOUSEHOLD_KEY] = "invalid_json"
             else:
                 self._household_json = raw
-                self._components_by_type = extract_components_by_type(
-                    household
-                )
-                self._type_all = [
+                self._components_by_type = extract_components_by_type(household)
+                type_all = [
                     t
                     for t in COMPONENT_TYPE_ORDER
                     if self._components_by_type.get(t)
                 ]
+                self._type_all_household = type_all
+                self._type_all: list[str] = []
+                self._selected_types: set[str] = set()
                 self._type_idx = 0
                 self._mapping_accumulator: dict[str, str] = {}
-                return self._show_type_step("[]")
+                return self._show_select_components()
 
         return self.async_show_form(
             step_id="household",
-            data_schema=_schema_step_household(
-                "", include_back=True
-            ),
+            data_schema=_schema_step_household("", include_back=False),
             errors=errors,
             last_step=False,
         )
 
     # ------------------------------------------------------------------
-    # Steps 3..N: Per-component-type pages (dynamic via __getattr__)
+    # Step: Select components
+    # ------------------------------------------------------------------
+
+    async def async_step_select_components(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> FlowResult:
+        """Show all components as checkboxes; only selected ones get a config page."""
+        type_all_household: list[str] = getattr(self, "_type_all_household", [])
+
+        if user_input is not None:
+            if user_input.get(_BACK_KEY):
+                return self.async_show_form(
+                    step_id="household",
+                    data_schema=_schema_step_household(
+                        getattr(self, "_household_json", ""),
+                        include_back=False,
+                    ),
+                    last_step=False,
+                )
+
+            selected = [
+                t for t in type_all_household if user_input.get(f"select_{t}")
+            ]
+            self._selected_types = set(selected)
+            self._type_all = selected
+            self._type_idx = 0
+            self._mapping_accumulator = {}
+
+            if not selected:
+                return self._finish_config()
+            return self._show_type_step("[]")
+
+        return self._show_select_components()
+
+    def _show_select_components(self) -> FlowResult:
+        """Render the component selection form."""
+        type_all_household: list[str] = getattr(self, "_type_all_household", [])
+        selected_types: set[str] = getattr(self, "_selected_types", set())
+        # last_step=True  → button reads "Submit" (no types to configure)
+        # last_step=False → button reads "Next"   (user may select types)
+        return self.async_show_form(
+            step_id="select_components",
+            data_schema=_schema_select_components(type_all_household, selected_types),
+            last_step=not type_all_household,
+        )
+
+    # ------------------------------------------------------------------
+    # Steps: Per-component-type pages (dynamic via __getattr__)
     # ------------------------------------------------------------------
 
     def __getattr__(self, name: str) -> Any:
@@ -419,23 +434,15 @@ class JoulzenConfigFlow(
             if user_input.get(_BACK_KEY):
                 self._type_idx -= 1
                 if self._type_idx < 0:
-                    return self.async_show_form(
-                        step_id="household",
-                        data_schema=_schema_step_household(
-                            getattr(self, "_household_json", ""),
-                            include_back=True,
-                        ),
-                        last_step=False,
-                    )
+                    self._type_idx = 0
+                    return self._show_select_components()
                 return self._show_type_step(last_mapping)
 
             self._mapping_accumulator.update(
                 _collect_from_user_input(user_input)
             )
             self._type_idx += 1
-            if self._type_idx >= len(
-                getattr(self, "_type_all", [])
-            ):
+            if self._type_idx >= len(getattr(self, "_type_all", [])):
                 return self._finish_config()
             return self._show_type_step(last_mapping)
 
@@ -459,19 +466,11 @@ class JoulzenConfigFlow(
 
     def _finish_config(self) -> FlowResult:
         """Build config data and create the entry."""
-        step1 = getattr(self, "_step1_data", {})
         data = {
             # OAuth token data (token + auth_implementation keys)
             **getattr(self, "_oauth_data", {}),
-            CONF_MQTT_TOPIC: step1.get(
-                CONF_MQTT_TOPIC, DEFAULT_MQTT_TOPIC
-            ),
-            CONF_PUBLISH_INTERVAL: step1.get(
-                CONF_PUBLISH_INTERVAL, DEFAULT_PUBLISH_INTERVAL
-            ),
-            CONF_HOUSEHOLD_JSON: getattr(
-                self, "_household_json", ""
-            ),
+            CONF_PUBLISH_INTERVAL: DEFAULT_PUBLISH_INTERVAL,
+            CONF_HOUSEHOLD_JSON: getattr(self, "_household_json", ""),
             CONF_SENSOR_MAPPING: _mapping_from_accumulator(
                 getattr(self, "_mapping_accumulator", {})
             ),
@@ -494,7 +493,7 @@ class JoulzenConfigFlow(
 # ---------------------------------------------------------------------------
 
 class JoulzenOptionsFlowHandler(config_entries.OptionsFlow):
-    """Handle Joulzen options (reconfigure topic, household, mapping)."""
+    """Handle Joulzen options (reconfigure household and mapping)."""
 
     def __init__(
         self, config_entry: config_entries.ConfigEntry
@@ -506,54 +505,37 @@ class JoulzenOptionsFlowHandler(config_entries.OptionsFlow):
         return self.config_entry.data | self.config_entry.options
 
     # ------------------------------------------------------------------
-    # Step 1: MQTT settings
+    # Entry point: skip interval form, go straight to household
     # ------------------------------------------------------------------
 
     async def async_step_init(
         self,
         user_input: dict[str, Any] | None = None,
     ) -> FlowResult:
-        """Step 1: Topic and interval."""
+        """Skip interval step and go directly to household configuration."""
         config = self._config()
-
-        if user_input is not None:
-            self._step1_data = user_input
-            return self.async_show_form(
-                step_id="household",
-                data_schema=_schema_step_household(
-                    config.get(CONF_HOUSEHOLD_JSON, ""),
-                    include_back=True,
-                ),
-                last_step=False,
-            )
         return self.async_show_form(
-            step_id="init",
-            data_schema=_schema_step1(config),
+            step_id="household",
+            data_schema=_schema_step_household(
+                config.get(CONF_HOUSEHOLD_JSON, ""),
+                include_back=False,
+            ),
             last_step=False,
         )
 
     # ------------------------------------------------------------------
-    # Step 2: Household JSON
+    # Step: Household JSON
     # ------------------------------------------------------------------
 
     async def async_step_household(
         self,
         user_input: dict[str, Any] | None = None,
     ) -> FlowResult:
-        """Step 2: Paste household JSON."""
+        """Step: Paste household JSON."""
         config = self._config()
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            if user_input.get(_BACK_KEY):
-                return self.async_show_form(
-                    step_id="init",
-                    data_schema=_schema_step1(
-                        getattr(self, "_step1_data", config)
-                    ),
-                    last_step=False,
-                )
-
             raw = user_input.get(_HOUSEHOLD_KEY, "")
             try:
                 household = json.loads(raw)
@@ -561,31 +543,82 @@ class JoulzenOptionsFlowHandler(config_entries.OptionsFlow):
                 errors[_HOUSEHOLD_KEY] = "invalid_json"
             else:
                 self._household_json = raw
-                self._components_by_type = extract_components_by_type(
-                    household
-                )
-                self._type_all = [
+                self._components_by_type = extract_components_by_type(household)
+                type_all = [
                     t
                     for t in COMPONENT_TYPE_ORDER
                     if self._components_by_type.get(t)
                 ]
+                self._type_all_household = type_all
+                self._type_all: list[str] = []
+                self._selected_types: set[str] = set()
                 self._type_idx = 0
                 self._mapping_accumulator: dict[str, str] = {}
-                existing = config.get(CONF_SENSOR_MAPPING, "[]")
-                return self._show_type_step(existing)
+                return self._show_select_components()
 
         return self.async_show_form(
             step_id="household",
             data_schema=_schema_step_household(
                 config.get(CONF_HOUSEHOLD_JSON, ""),
-                include_back=True,
+                include_back=False,
             ),
             errors=errors,
             last_step=False,
         )
 
     # ------------------------------------------------------------------
-    # Steps 3..N: Per-component-type pages (dynamic via __getattr__)
+    # Step: Select components
+    # ------------------------------------------------------------------
+
+    async def async_step_select_components(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> FlowResult:
+        """Show all components as checkboxes; only selected ones get a config page."""
+        type_all_household: list[str] = getattr(self, "_type_all_household", [])
+        config = self._config()
+
+        if user_input is not None:
+            if user_input.get(_BACK_KEY):
+                return self.async_show_form(
+                    step_id="household",
+                    data_schema=_schema_step_household(
+                        getattr(
+                            self,
+                            "_household_json",
+                            config.get(CONF_HOUSEHOLD_JSON, ""),
+                        ),
+                        include_back=False,
+                    ),
+                    last_step=False,
+                )
+
+            selected = [
+                t for t in type_all_household if user_input.get(f"select_{t}")
+            ]
+            self._selected_types = set(selected)
+            self._type_all = selected
+            self._type_idx = 0
+            self._mapping_accumulator = {}
+
+            if not selected:
+                return self._finish_options()
+            return self._show_type_step(config.get(CONF_SENSOR_MAPPING, "[]"))
+
+        return self._show_select_components()
+
+    def _show_select_components(self) -> FlowResult:
+        """Render the component selection form."""
+        type_all_household: list[str] = getattr(self, "_type_all_household", [])
+        selected_types: set[str] = getattr(self, "_selected_types", set())
+        return self.async_show_form(
+            step_id="select_components",
+            data_schema=_schema_select_components(type_all_household, selected_types),
+            last_step=not type_all_household,
+        )
+
+    # ------------------------------------------------------------------
+    # Steps: Per-component-type pages (dynamic via __getattr__)
     # ------------------------------------------------------------------
 
     def __getattr__(self, name: str) -> Any:
@@ -613,28 +646,15 @@ class JoulzenOptionsFlowHandler(config_entries.OptionsFlow):
             if user_input.get(_BACK_KEY):
                 self._type_idx -= 1
                 if self._type_idx < 0:
-                    return self.async_show_form(
-                        step_id="household",
-                        data_schema=_schema_step_household(
-                            getattr(
-                                self, "_household_json",
-                                self._config().get(
-                                    CONF_HOUSEHOLD_JSON, ""
-                                ),
-                            ),
-                            include_back=True,
-                        ),
-                        last_step=False,
-                    )
+                    self._type_idx = 0
+                    return self._show_select_components()
                 return self._show_type_step(existing_mapping)
 
             self._mapping_accumulator.update(
                 _collect_from_user_input(user_input)
             )
             self._type_idx += 1
-            if self._type_idx >= len(
-                getattr(self, "_type_all", [])
-            ):
+            if self._type_idx >= len(getattr(self, "_type_all", [])):
                 return self._finish_options()
             return self._show_type_step(existing_mapping)
 
@@ -659,18 +679,11 @@ class JoulzenOptionsFlowHandler(config_entries.OptionsFlow):
     def _finish_options(self) -> FlowResult:
         """Persist updated options and complete flow."""
         config = self._config()
-        step1 = getattr(self, "_step1_data", config)
         sensor_mapping = _mapping_from_accumulator(
             getattr(self, "_mapping_accumulator", {})
         )
         data = {
-            CONF_MQTT_TOPIC: step1.get(
-                CONF_MQTT_TOPIC, config.get(CONF_MQTT_TOPIC)
-            ),
-            CONF_PUBLISH_INTERVAL: step1.get(
-                CONF_PUBLISH_INTERVAL,
-                config.get(CONF_PUBLISH_INTERVAL),
-            ),
+            CONF_PUBLISH_INTERVAL: DEFAULT_PUBLISH_INTERVAL,
             CONF_HOUSEHOLD_JSON: getattr(
                 self, "_household_json",
                 config.get(CONF_HOUSEHOLD_JSON, ""),
@@ -678,8 +691,7 @@ class JoulzenOptionsFlowHandler(config_entries.OptionsFlow):
             CONF_SENSOR_MAPPING: sensor_mapping,
         }
         _LOGGER.info(
-            "Saving Joulzen options: topic=%s interval=%s",
-            data[CONF_MQTT_TOPIC],
+            "Saving Joulzen options: interval=%s",
             data[CONF_PUBLISH_INTERVAL],
         )
         self.hass.config_entries.async_update_entry(
