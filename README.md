@@ -2,9 +2,9 @@
 
 Home Assistant Integration for Joulzen (https://joulzen.at).
 
-This integration pulls live energy data from the Joulzen cloud into Home Assistant as sensors — covering your grid connection, solar production, battery, heat pump, EV charger, Joulzen tanks, and more, depending on your household setup.
+This integration pulls live energy data from the Joulzen cloud into Home Assistant as sensors — covering your thermal battery but also grid connection, solar production, battery, heat pump, EV charger, and more, depending on your household setup.
 
-Optionally, you can map local HA sensor entities to specific Joulzen data fields. This is useful when a locally-connected device (e.g. an EV charger or smart meter) provides readings that are more accurate or timely than what Joulzen receives from the cloud. Mapped values are pushed back to Joulzen every 60 seconds and used there for display and optimisation.
+Optionally, you can map local HA sensor entities to specific Joulzen data fields. This is useful when a locally-connected device (e.g. an EV charger or smart meter) provides readings that are otherwise not accessible, or more accurate or timely than what Joulzen receives directly. Mapped values are pushed to Joulzen every 60 seconds.
 
 ## Installation
 
