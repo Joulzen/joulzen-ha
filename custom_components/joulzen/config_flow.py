@@ -8,6 +8,8 @@ import logging
 import secrets as py_secrets
 from typing import Any
 
+import aiohttp
+
 import voluptuous as vol
 
 from homeassistant import config_entries
@@ -30,6 +32,7 @@ from .const import (
     CONF_SENSOR_MAPPING,
     DEFAULT_PUBLISH_INTERVAL,
     DOMAIN,
+    JOULZEN_API_URL,
     OAUTH_CLIENT_ID,
     OAUTH_CLIENT_SECRET,
     SUPABASE_URL,
@@ -37,33 +40,37 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
-_HOUSEHOLD_KEY = "household_json"
 _BACK_KEY = "_back"
+_SELECTED_HOUSEHOLD_KEY = "selected_household"
 
 
 # ---------------------------------------------------------------------------
 # Schema helpers
 # ---------------------------------------------------------------------------
 
-def _schema_step_household(
-    default_json: str, include_back: bool = True
-) -> vol.Schema:
-    """Schema for the household JSON paste step."""
-    field: Any
-    if default_json:
-        field = vol.Required(_HOUSEHOLD_KEY, default=default_json)
-    else:
-        field = vol.Required(_HOUSEHOLD_KEY)
-    schema_dict: dict = {
-        field: selector.TextSelector(
-            selector.TextSelectorConfig(multiline=True)
-        )
-    }
-    if include_back:
-        schema_dict[
-            vol.Optional(_BACK_KEY, default=False)
-        ] = selector.BooleanSelector()
-    return vol.Schema(schema_dict)
+def _household_label(h: dict) -> str:
+    """Build a human-readable label for a household entry."""
+    name = h.get("name", "")
+    address = h.get("address", "")
+    if name and address:
+        return f"{name} \u2014 {address}"
+    return name or address or h.get("systemId", "Unknown")
+
+
+def _schema_select_household(households: list) -> vol.Schema:
+    """Schema for the household selection dropdown."""
+    return vol.Schema({
+        vol.Required(_SELECTED_HOUSEHOLD_KEY, default="0"):
+            selector.SelectSelector(selector.SelectSelectorConfig(
+                options=[
+                    selector.SelectOptionDict(
+                        value=str(i),
+                        label=_household_label(h),
+                    )
+                    for i, h in enumerate(households)
+                ]
+            ))
+    })
 
 
 def _schema_select_components(
@@ -184,6 +191,33 @@ def _mapping_from_accumulator(accumulator: dict[str, str]) -> str:
             if entity
         ]
     )
+
+
+async def _fetch_households(
+    hass: HomeAssistant, access_token: str
+) -> tuple:
+    """GET /household and return (list, None) or (None, error_key)."""
+    session = async_get_clientsession(hass)
+    timeout = aiohttp.ClientTimeout(total=10)
+    try:
+        async with session.get(
+            f"{JOULZEN_API_URL}/household",
+            headers={"Authorization": f"Bearer {access_token}"},
+            timeout=timeout,
+        ) as resp:
+            if not resp.ok:
+                body = await resp.text()
+                _LOGGER.error(
+                    "Joulzen /household fetch failed: status=%s body=%s",
+                    resp.status,
+                    body,
+                )
+                return None, "cannot_fetch_household"
+            data = await resp.json(content_type=None)
+            return data, None
+    except Exception:  # noqa: BLE001
+        _LOGGER.exception("Error fetching Joulzen households")
+        return None, "cannot_fetch_household"
 
 
 # ---------------------------------------------------------------------------
@@ -307,59 +341,69 @@ class JoulzenConfigFlow(
         return await self.async_step_auth()
 
     # ------------------------------------------------------------------
-    # OAuth2 callback → proceed directly to household step (interval
-    # is fixed at DEFAULT_PUBLISH_INTERVAL, no form needed).
+    # OAuth2 callback → fetch households from API.
     # ------------------------------------------------------------------
 
     async def async_oauth_create_entry(
         self, data: dict[str, Any]
     ) -> FlowResult:
-        """OAuth complete — store token and move to household configuration."""
+        """OAuth complete — fetch households and show selection."""
         self._oauth_data = data
+        return await self._fetch_and_show_households()
+
+    async def _fetch_and_show_households(self) -> FlowResult:
+        """Fetch /household and render the selection form."""
+        token = self._oauth_data["token"]["access_token"]
+        households, error = await _fetch_households(self.hass, token)
+        if error:
+            return self.async_show_form(
+                step_id="select_household",
+                data_schema=vol.Schema({}),
+                errors={"base": error},
+                last_step=False,
+            )
+        if not households:
+            return self.async_abort(reason="no_household")
+        self._households: list = households
         return self.async_show_form(
-            step_id="household",
-            data_schema=_schema_step_household("", include_back=False),
+            step_id="select_household",
+            data_schema=_schema_select_household(households),
             last_step=False,
         )
 
     # ------------------------------------------------------------------
-    # Step: Household JSON
+    # Step: Select household
     # ------------------------------------------------------------------
 
-    async def async_step_household(
+    async def async_step_select_household(
         self,
         user_input: dict[str, Any] | None = None,
     ) -> FlowResult:
-        """Step: Paste household JSON."""
-        errors: dict[str, str] = {}
-
+        """Step: choose one household from the fetched list."""
         if user_input is not None:
-            raw = user_input.get(_HOUSEHOLD_KEY, "")
-            try:
-                household = json.loads(raw)
-            except json.JSONDecodeError:
-                errors[_HOUSEHOLD_KEY] = "invalid_json"
-            else:
-                self._household_json = raw
-                self._components_by_type = extract_components_by_type(household)
-                type_all = [
-                    t
-                    for t in COMPONENT_TYPE_ORDER
-                    if self._components_by_type.get(t)
-                ]
-                self._type_all_household = type_all
-                self._type_all: list[str] = []
-                self._selected_types: set[str] = set()
-                self._type_idx = 0
-                self._mapping_accumulator: dict[str, str] = {}
-                return self._show_select_components()
+            idx = int(user_input[_SELECTED_HOUSEHOLD_KEY])
+            household = self._households[idx]
+            self._household_json = json.dumps(household)
+            self._components_by_type = extract_components_by_type(household)
+            type_all = [
+                t for t in COMPONENT_TYPE_ORDER
+                if self._components_by_type.get(t)
+            ]
+            self._type_all_household = type_all
+            self._type_all: list[str] = []
+            self._selected_types: set[str] = set()
+            self._type_idx = 0
+            self._mapping_accumulator: dict[str, str] = {}
+            return self._show_select_components()
 
-        return self.async_show_form(
-            step_id="household",
-            data_schema=_schema_step_household("", include_back=False),
-            errors=errors,
-            last_step=False,
-        )
+        # Back-navigation: re-use cached list if available
+        if getattr(self, "_households", None):
+            return self.async_show_form(
+                step_id="select_household",
+                data_schema=_schema_select_household(self._households),
+                last_step=False,
+            )
+        return await self._fetch_and_show_households()
 
     # ------------------------------------------------------------------
     # Step: Select components
@@ -369,19 +413,14 @@ class JoulzenConfigFlow(
         self,
         user_input: dict[str, Any] | None = None,
     ) -> FlowResult:
-        """Show all components as checkboxes; only selected ones get a config page."""
-        type_all_household: list[str] = getattr(self, "_type_all_household", [])
+        """Show all components as checkboxes; only selected get a config page."""
+        type_all_household: list[str] = getattr(
+            self, "_type_all_household", []
+        )
 
         if user_input is not None:
             if user_input.get(_BACK_KEY):
-                return self.async_show_form(
-                    step_id="household",
-                    data_schema=_schema_step_household(
-                        getattr(self, "_household_json", ""),
-                        include_back=False,
-                    ),
-                    last_step=False,
-                )
+                return await self.async_step_select_household()
 
             selected = [
                 t for t in type_all_household if user_input.get(f"select_{t}")
@@ -505,66 +544,68 @@ class JoulzenOptionsFlowHandler(config_entries.OptionsFlow):
         return self.config_entry.data | self.config_entry.options
 
     # ------------------------------------------------------------------
-    # Entry point: skip interval form, go straight to household
+    # Entry point: fetch households from API
     # ------------------------------------------------------------------
 
     async def async_step_init(
         self,
         user_input: dict[str, Any] | None = None,
     ) -> FlowResult:
-        """Skip interval step and go directly to household configuration."""
-        config = self._config()
+        """Fetch households and show selection."""
+        return await self._fetch_and_show_households()
+
+    async def _fetch_and_show_households(self) -> FlowResult:
+        """Fetch /household and render the selection form."""
+        token = self.config_entry.data["token"]["access_token"]
+        households, error = await _fetch_households(self.hass, token)
+        if error:
+            return self.async_show_form(
+                step_id="select_household",
+                data_schema=vol.Schema({}),
+                errors={"base": error},
+                last_step=False,
+            )
+        if not households:
+            return self.async_abort(reason="no_household")
+        self._households: list = households
         return self.async_show_form(
-            step_id="household",
-            data_schema=_schema_step_household(
-                config.get(CONF_HOUSEHOLD_JSON, ""),
-                include_back=False,
-            ),
+            step_id="select_household",
+            data_schema=_schema_select_household(households),
             last_step=False,
         )
 
     # ------------------------------------------------------------------
-    # Step: Household JSON
+    # Step: Select household
     # ------------------------------------------------------------------
 
-    async def async_step_household(
+    async def async_step_select_household(
         self,
         user_input: dict[str, Any] | None = None,
     ) -> FlowResult:
-        """Step: Paste household JSON."""
-        config = self._config()
-        errors: dict[str, str] = {}
-
+        """Step: choose one household from the fetched list."""
         if user_input is not None:
-            raw = user_input.get(_HOUSEHOLD_KEY, "")
-            try:
-                household = json.loads(raw)
-            except json.JSONDecodeError:
-                errors[_HOUSEHOLD_KEY] = "invalid_json"
-            else:
-                self._household_json = raw
-                self._components_by_type = extract_components_by_type(household)
-                type_all = [
-                    t
-                    for t in COMPONENT_TYPE_ORDER
-                    if self._components_by_type.get(t)
-                ]
-                self._type_all_household = type_all
-                self._type_all: list[str] = []
-                self._selected_types: set[str] = set()
-                self._type_idx = 0
-                self._mapping_accumulator: dict[str, str] = {}
-                return self._show_select_components()
+            idx = int(user_input[_SELECTED_HOUSEHOLD_KEY])
+            household = self._households[idx]
+            self._household_json = json.dumps(household)
+            self._components_by_type = extract_components_by_type(household)
+            type_all = [
+                t for t in COMPONENT_TYPE_ORDER
+                if self._components_by_type.get(t)
+            ]
+            self._type_all_household = type_all
+            self._type_all: list[str] = []
+            self._selected_types: set[str] = set()
+            self._type_idx = 0
+            self._mapping_accumulator: dict[str, str] = {}
+            return self._show_select_components()
 
-        return self.async_show_form(
-            step_id="household",
-            data_schema=_schema_step_household(
-                config.get(CONF_HOUSEHOLD_JSON, ""),
-                include_back=False,
-            ),
-            errors=errors,
-            last_step=False,
-        )
+        if getattr(self, "_households", None):
+            return self.async_show_form(
+                step_id="select_household",
+                data_schema=_schema_select_household(self._households),
+                last_step=False,
+            )
+        return await self._fetch_and_show_households()
 
     # ------------------------------------------------------------------
     # Step: Select components
@@ -574,24 +615,15 @@ class JoulzenOptionsFlowHandler(config_entries.OptionsFlow):
         self,
         user_input: dict[str, Any] | None = None,
     ) -> FlowResult:
-        """Show all components as checkboxes; only selected ones get a config page."""
-        type_all_household: list[str] = getattr(self, "_type_all_household", [])
+        """Show all components as checkboxes; only selected get a config page."""
+        type_all_household: list[str] = getattr(
+            self, "_type_all_household", []
+        )
         config = self._config()
 
         if user_input is not None:
             if user_input.get(_BACK_KEY):
-                return self.async_show_form(
-                    step_id="household",
-                    data_schema=_schema_step_household(
-                        getattr(
-                            self,
-                            "_household_json",
-                            config.get(CONF_HOUSEHOLD_JSON, ""),
-                        ),
-                        include_back=False,
-                    ),
-                    last_step=False,
-                )
+                return await self.async_step_select_household()
 
             selected = [
                 t for t in type_all_household if user_input.get(f"select_{t}")

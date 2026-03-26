@@ -1,17 +1,18 @@
 {
   "config": {
     "error": {
-      "invalid_json": "Invalid JSON — please paste a valid household JSON."
+      "cannot_fetch_household": "Could not fetch households from Joulzen. Please check your connection and try again."
+    },
+    "abort": {
+      "already_configured": "Already configured",
+      "no_household": "Currently, no household is connected to your profile. Please ask your administrator to grant you access, or contact Joulzen support."
     },
     "step": {
-      "household": {
-        "title": "Household Configuration",
-        "description": "Paste the household JSON.",
+      "select_household": {
+        "title": "Household Selection",
+        "description": "Choose the household you want to integrate.",
         "data": {
-          "household_json": "Household JSON"
-        },
-        "data_description": {
-          "household_json": "Paste the full household JSON object here."
+          "selected_household": "Household"
         }
       },
       "select_components": {
@@ -47,28 +48,25 @@
       "ct_ev": { "title": "Electric Vehicle", "description": "Map Home Assistant entities to EV charging fields.", "data": { "_back": "← Go back" } },
       "ct_weather": { "title": "Weather Station", "description": "Map Home Assistant entities to weather observation fields.", "data": { "_back": "← Go back" } },
       "ct_heatingCircuit": { "title": "Heating Circuit", "description": "Map Home Assistant entities to heating circuit fields.", "data": { "_back": "← Go back" } }
-    },
-    "abort": {
-      "already_configured": "Already configured"
     }
   },
   "options": {
     "error": {
-      "invalid_json": "Invalid JSON — please paste a valid household JSON."
+      "cannot_fetch_household": "Could not fetch households from Joulzen. Please check your connection and try again."
+    },
+    "abort": {
+      "no_household": "Currently, no household is connected to your profile. Please ask your administrator to grant you access, or contact Joulzen support."
     },
     "step": {
-      "household": {
-        "title": "Household Configuration",
-        "description": "Paste the household JSON.",
+      "select_household": {
+        "title": "Household Selection",
+        "description": "Choose the household you want to integrate.",
         "data": {
-          "household_json": "Household JSON"
-        },
-        "data_description": {
-          "household_json": "Paste the full household JSON object here."
+          "selected_household": "Household"
         }
       },
       "select_components": {
-        "title": "Publish to Joulzen",
+        "title": "Optional: Publish to Joulzen",
         "description": "Check the components for which you want to select Home Assistant entity overrides. The selected entities are then periodically published to Joulzen and used there for optimisation.",
         "data": {
           "select_grid": "Grid",
