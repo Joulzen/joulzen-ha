@@ -87,19 +87,19 @@ _FIELD_META: dict[str, tuple] = {
     "maxPrice":  ("ct/kWh", None, SensorStateClass.MEASUREMENT),
     # Money – EUR
     "spending": (
-        "EUR", SensorDeviceClass.MONETARY, SensorStateClass.TOTAL_INCREASING,
+        "EUR", SensorDeviceClass.MONETARY, SensorStateClass.TOTAL,
     ),
     "earning": (
-        "EUR", SensorDeviceClass.MONETARY, SensorStateClass.TOTAL_INCREASING,
+        "EUR", SensorDeviceClass.MONETARY, SensorStateClass.TOTAL,
     ),
     "cost": (
-        "EUR", SensorDeviceClass.MONETARY, SensorStateClass.TOTAL_INCREASING,
+        "EUR", SensorDeviceClass.MONETARY, SensorStateClass.TOTAL,
     ),
     "totalEarned": (
-        "EUR", SensorDeviceClass.MONETARY, SensorStateClass.TOTAL_INCREASING,
+        "EUR", SensorDeviceClass.MONETARY, SensorStateClass.TOTAL,
     ),
     "money_saved": (
-        "EUR", SensorDeviceClass.MONETARY, SensorStateClass.TOTAL_INCREASING,
+        "EUR", SensorDeviceClass.MONETARY, SensorStateClass.TOTAL,
     ),
     # Ratio fields – % (value already ×100 from parser)
     "totalAvailability": ("%", None, SensorStateClass.MEASUREMENT),
