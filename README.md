@@ -1,6 +1,6 @@
 # joulzen-ha
 
-Home Assistant Integration for Joulzen.
+Home Assistant Integration for Joulzen (https://joulzen.at).
 
 This integration pulls live energy data from the Joulzen cloud into Home Assistant as sensors — covering your grid connection, solar production, battery, heat pump, EV charger, Joulzen tanks, and more, depending on your household setup.
 
