@@ -10,6 +10,8 @@ CONF_HOUSEHOLD_JSON = "household_json"
 # Defaults
 DEFAULT_PUBLISH_INTERVAL = 60
 
+OVERRIDE_SOURCE_ID = "2feb6c6a-a417-4044-8fc9-2d03fa72932d"
+
 # Data keys
 DATA_COORDINATOR = "coordinator"
 

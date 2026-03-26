@@ -42,6 +42,23 @@ _LOGGER = logging.getLogger(__name__)
 
 _BACK_KEY = "_back"
 _SELECTED_HOUSEHOLD_KEY = "selected_household"
+_SELECTED_COMPONENTS_KEY = "selected_components"
+
+_COMPONENT_LABELS: dict[str, str] = {
+    "grid": "Grid",
+    "energyCommunity": "Energy Community",
+    "pv": "Solar PV",
+    "battery": "Battery",
+    "appliance": "Appliance",
+    "heater": "Heat Pump / Heater",
+    "districtHeating": "District Heating",
+    "joulzenTank": "Joulzen Tank",
+    "tankLayer": "Tank Layer",
+    "thermostat": "Thermostat",
+    "ev": "Electric Vehicle",
+    "weather": "Weather Station",
+    "heatingCircuit": "Heating Circuit",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -50,17 +67,19 @@ _SELECTED_HOUSEHOLD_KEY = "selected_household"
 
 def _household_label(h: dict) -> str:
     """Build a human-readable label for a household entry."""
-    name = h.get("name", "")
-    address = h.get("address", "")
+    name = h.get("householdName") or h.get("name", "")
+    address = h.get("streetAddress") or h.get("address", "")
     if name and address:
         return f"{name} \u2014 {address}"
     return name or address or h.get("systemId", "Unknown")
 
 
-def _schema_select_household(households: list) -> vol.Schema:
+def _schema_select_household(
+    households: list, default_idx: str = "0"
+) -> vol.Schema:
     """Schema for the household selection dropdown."""
     return vol.Schema({
-        vol.Required(_SELECTED_HOUSEHOLD_KEY, default="0"):
+        vol.Required(_SELECTED_HOUSEHOLD_KEY, default=default_idx):
             selector.SelectSelector(selector.SelectSelectorConfig(
                 options=[
                     selector.SelectOptionDict(
@@ -73,22 +92,61 @@ def _schema_select_household(households: list) -> vol.Schema:
     })
 
 
+def _current_household_idx(
+    households: list, system_id: str
+) -> str:
+    """Return the list index (as str) of the household matching system_id."""
+    for i, h in enumerate(households):
+        if h.get("systemId") == system_id:
+            return str(i)
+    return "0"
+
+
 def _schema_select_components(
     type_all: list[str], selected: set[str] | None = None
 ) -> vol.Schema:
-    """Schema for the component selection step.
-
-    Each available component type becomes a boolean checkbox.
-    ``selected`` pre-populates checkboxes when the user navigates back.
-    """
+    """Schema for the component selection step (compact multi-select list)."""
     selected = selected or set()
-    schema_dict: dict = {}
-    for type_name in type_all:
-        schema_dict[
-            vol.Optional(f"select_{type_name}", default=(type_name in selected))
-        ] = selector.BooleanSelector()
-    schema_dict[vol.Optional(_BACK_KEY, default=False)] = selector.BooleanSelector()
-    return vol.Schema(schema_dict)
+    return vol.Schema({
+        vol.Optional(
+            _SELECTED_COMPONENTS_KEY,
+            default=list(selected),
+        ): selector.SelectSelector(selector.SelectSelectorConfig(
+            options=[
+                selector.SelectOptionDict(
+                    value=t,
+                    label=_COMPONENT_LABELS.get(t, t),
+                )
+                for t in type_all
+            ],
+            multiple=True,
+            mode=selector.SelectSelectorMode.LIST,
+        )),
+        vol.Optional(_BACK_KEY, default=False): selector.BooleanSelector(),
+    })
+
+
+def _types_with_overrides(
+    components_by_type: dict[str, list[dict]],
+    mapping_str: str,
+) -> set[str]:
+    """Return the set of component types that have at least one active override."""
+    try:
+        mapping = json.loads(mapping_str or "[]")
+    except json.JSONDecodeError:
+        return set()
+    my_ids = {
+        m["my_id"] for m in mapping
+        if isinstance(m, dict) and "my_id" in m
+    }
+    result: set[str] = set()
+    for type_name, comps in components_by_type.items():
+        for comp in comps:
+            cid = comp.get("componentId", "")
+            if cid and any(mid.startswith(f"{cid}_") for mid in my_ids):
+                result.add(type_name)
+                break
+    return result
 
 
 def _entity_defaults_from_mapping(mapping_str: str) -> dict[str, str]:
@@ -118,36 +176,30 @@ def _schema_step_type(
     schema_dict: dict = {}
 
     for comp_id, (live_keys, agg_keys) in component_sections.items():
-        live_dict: dict = {}
-        for key in live_keys:
-            dv = entity_defaults.get(key)
-            if dv:
-                live_dict[
-                    vol.Optional(
-                        key, description={"suggested_value": dv}
-                    )
-                ] = entity_sel
-            else:
-                live_dict[vol.Optional(key)] = entity_sel
+        live_dict = {vol.Optional(key): entity_sel for key in live_keys}
+        agg_dict = {vol.Optional(key): entity_sel for key in agg_keys}
 
-        agg_dict: dict = {}
-        for key in agg_keys:
-            dv = entity_defaults.get(key)
-            if dv:
-                agg_dict[
-                    vol.Optional(
-                        key, description={"suggested_value": dv}
-                    )
-                ] = entity_sel
-            else:
-                agg_dict[vol.Optional(key)] = entity_sel
+        live_defaults = {
+            k: entity_defaults[k] for k in live_keys if k in entity_defaults
+        }
+        agg_defaults = {
+            k: entity_defaults[k] for k in agg_keys if k in entity_defaults
+        }
 
         if live_dict:
-            schema_dict[f"{comp_id}_live"] = section(
+            live_key = (
+                vol.Optional(f"{comp_id}_live", default=live_defaults)
+                if live_defaults else vol.Optional(f"{comp_id}_live")
+            )
+            schema_dict[live_key] = section(
                 vol.Schema(live_dict), {"collapsed": False}
             )
         if agg_dict:
-            schema_dict[f"{comp_id}_day"] = section(
+            agg_key = (
+                vol.Optional(f"{comp_id}_day", default=agg_defaults)
+                if agg_defaults else vol.Optional(f"{comp_id}_day")
+            )
+            schema_dict[agg_key] = section(
                 vol.Schema(agg_dict), {"collapsed": False}
             )
 
@@ -414,17 +466,11 @@ class JoulzenConfigFlow(
         user_input: dict[str, Any] | None = None,
     ) -> FlowResult:
         """Show all components as checkboxes; only selected get a config page."""
-        type_all_household: list[str] = getattr(
-            self, "_type_all_household", []
-        )
-
         if user_input is not None:
             if user_input.get(_BACK_KEY):
                 return await self.async_step_select_household()
 
-            selected = [
-                t for t in type_all_household if user_input.get(f"select_{t}")
-            ]
+            selected = user_input.get(_SELECTED_COMPONENTS_KEY, [])
             self._selected_types = set(selected)
             self._type_all = selected
             self._type_idx = 0
@@ -438,13 +484,15 @@ class JoulzenConfigFlow(
 
     def _show_select_components(self) -> FlowResult:
         """Render the component selection form."""
-        type_all_household: list[str] = getattr(self, "_type_all_household", [])
+        type_all_household: list[str] = getattr(
+            self, "_type_all_household", []
+        )
         selected_types: set[str] = getattr(self, "_selected_types", set())
-        # last_step=True  → button reads "Submit" (no types to configure)
-        # last_step=False → button reads "Next"   (user may select types)
         return self.async_show_form(
             step_id="select_components",
-            data_schema=_schema_select_components(type_all_household, selected_types),
+            data_schema=_schema_select_components(
+                type_all_household, selected_types
+            ),
             last_step=not type_all_household,
         )
 
@@ -568,9 +616,19 @@ class JoulzenOptionsFlowHandler(config_entries.OptionsFlow):
         if not households:
             return self.async_abort(reason="no_household")
         self._households: list = households
+        try:
+            cfg_household = json.loads(
+                self._config().get(CONF_HOUSEHOLD_JSON, "{}")
+            )
+            self._saved_system_id: str = cfg_household.get("systemId", "")
+        except (json.JSONDecodeError, AttributeError):
+            self._saved_system_id = ""
+        default_idx = _current_household_idx(
+            households, self._saved_system_id
+        )
         return self.async_show_form(
             step_id="select_household",
-            data_schema=_schema_select_household(households),
+            data_schema=_schema_select_household(households, default_idx),
             last_step=False,
         )
 
@@ -594,15 +652,30 @@ class JoulzenOptionsFlowHandler(config_entries.OptionsFlow):
             ]
             self._type_all_household = type_all
             self._type_all: list[str] = []
-            self._selected_types: set[str] = set()
+            household_changed = (
+                household.get("systemId", "") != self._saved_system_id
+            )
+            self._selected_types = (
+                set() if household_changed
+                else _types_with_overrides(
+                    self._components_by_type,
+                    self._config().get(CONF_SENSOR_MAPPING, "[]"),
+                )
+            )
             self._type_idx = 0
             self._mapping_accumulator: dict[str, str] = {}
             return self._show_select_components()
 
         if getattr(self, "_households", None):
+            default_idx = _current_household_idx(
+                self._households,
+                getattr(self, "_saved_system_id", ""),
+            )
             return self.async_show_form(
                 step_id="select_household",
-                data_schema=_schema_select_household(self._households),
+                data_schema=_schema_select_household(
+                    self._households, default_idx
+                ),
                 last_step=False,
             )
         return await self._fetch_and_show_households()
@@ -616,18 +689,11 @@ class JoulzenOptionsFlowHandler(config_entries.OptionsFlow):
         user_input: dict[str, Any] | None = None,
     ) -> FlowResult:
         """Show all components as checkboxes; only selected get a config page."""
-        type_all_household: list[str] = getattr(
-            self, "_type_all_household", []
-        )
-        config = self._config()
-
         if user_input is not None:
             if user_input.get(_BACK_KEY):
                 return await self.async_step_select_household()
 
-            selected = [
-                t for t in type_all_household if user_input.get(f"select_{t}")
-            ]
+            selected = user_input.get(_SELECTED_COMPONENTS_KEY, [])
             self._selected_types = set(selected)
             self._type_all = selected
             self._type_idx = 0
@@ -635,7 +701,10 @@ class JoulzenOptionsFlowHandler(config_entries.OptionsFlow):
 
             if not selected:
                 return self._finish_options()
-            return self._show_type_step(config.get(CONF_SENSOR_MAPPING, "[]"))
+            config = self._config()
+            return self._show_type_step(
+                config.get(CONF_SENSOR_MAPPING, "[]")
+            )
 
         return self._show_select_components()
 

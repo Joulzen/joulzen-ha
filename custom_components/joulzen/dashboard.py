@@ -214,12 +214,34 @@ def _build_dashboard_config(
             else:
                 cards.append(_build_card(comp_type, comp_name, n, multi))
 
+    badges = [
+        {
+            "type": "entity",
+            "entity": "sensor.joulzen_kpi_day_autarky",
+            "name": "Day Autarky",
+            "show_name": True,
+        },
+        {
+            "type": "entity",
+            "entity": "sensor.joulzen_kpi_day_selfconsumption",
+            "name": "Day Self Consumption",
+            "show_name": True,
+        },
+        {
+            "type": "entity",
+            "entity": "sensor.joulzen_kpi_day_money_saved",
+            "name": "Money Saved (30d)",
+            "show_name": True,
+        },
+    ]
+
     return {
         "views": [
             {
                 "title": "Overview",
                 "path": "overview",
                 "icon": "mdi:view-dashboard",
+                "badges": badges,
                 "cards": cards,
             }
         ]
@@ -250,25 +272,22 @@ async def async_create_dashboard(
     hass: HomeAssistant,
     coordinator: JoulzenCoordinator,
 ) -> None:
-    """Create the Joulzen Lovelace dashboard if it doesn't already exist."""
+    """Create or update the Joulzen Lovelace dashboard."""
     try:
+        # Always overwrite content so a household change is reflected.
         content_store = Store(hass, 1, _LOVELACE_CONTENT_KEY)
-        if await content_store.async_load():
-            _LOGGER.debug(
-                "Joulzen dashboard already exists, skipping creation"
-            )
-            return
-
         config = _build_dashboard_config(coordinator)
         await content_store.async_save({"config": config})
-        _LOGGER.info("Joulzen Lovelace dashboard content saved")
+        _LOGGER.debug("Joulzen Lovelace dashboard content saved")
 
+        # Register in the sidebar only once.
         dashboards_store = Store(hass, 1, _LOVELACE_DASHBOARDS_KEY)
         data = await dashboards_store.async_load() or {"items": []}
-        if not any(
+        already_registered = any(
             d.get("url_path") == DASHBOARD_URL_PATH
             for d in data.get("items", [])
-        ):
+        )
+        if not already_registered:
             data.setdefault("items", []).append({
                 "id": DASHBOARD_URL_PATH,
                 "url_path": DASHBOARD_URL_PATH,
@@ -280,18 +299,17 @@ async def async_create_dashboard(
             })
             await dashboards_store.async_save(data)
             _LOGGER.info("Joulzen dashboard registered in sidebar")
-
-        await hass.services.async_call(
-            "persistent_notification",
-            "create",
-            {
-                "title": "Joulzen Dashboard Ready",
-                "message": (
-                    "A Joulzen dashboard was created. "
-                    "Reload your browser to see it in the sidebar."
-                ),
-                "notification_id": "joulzen_dashboard",
-            },
-        )
+            await hass.services.async_call(
+                "persistent_notification",
+                "create",
+                {
+                    "title": "Joulzen Dashboard Ready",
+                    "message": (
+                        "A Joulzen dashboard was created. "
+                        "Reload your browser to see it in the sidebar."
+                    ),
+                    "notification_id": "joulzen_dashboard",
+                },
+            )
     except Exception:  # noqa: BLE001
         _LOGGER.exception("Failed to create Joulzen dashboard")

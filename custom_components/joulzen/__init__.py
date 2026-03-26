@@ -8,7 +8,7 @@ from __future__ import annotations
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import config_entry_oauth2_flow
+from homeassistant.helpers import config_entry_oauth2_flow, entity_registry as er
 from .const import (
     DATA_COORDINATOR,
     DOMAIN,
@@ -54,8 +54,27 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     }
 
     await coordinator.async_config_entry_first_refresh()
-    hass.async_create_task(async_create_dashboard(hass, coordinator))
 
+    # Remove entity registry entries whose component IDs are no longer
+    # present in the current household (e.g. after a household switch).
+    current_comp_ids = set(coordinator.components_info)
+    if current_comp_ids:
+        ent_reg = er.async_get(hass)
+        uid_prefix = entry.entry_id + "_"
+        for entity_entry in er.async_entries_for_config_entry(
+            ent_reg, entry.entry_id
+        ):
+            uid = entity_entry.unique_id
+            if not uid.startswith(uid_prefix):
+                continue
+            uid_suffix = uid[len(uid_prefix):]
+            if not any(
+                uid_suffix.startswith(cid + "_")
+                for cid in current_comp_ids
+            ):
+                ent_reg.async_remove(entity_entry.entity_id)
+
+    hass.async_create_task(async_create_dashboard(hass, coordinator))
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 

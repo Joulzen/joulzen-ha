@@ -19,19 +19,7 @@
         "title": "Optional: Publish to Joulzen",
         "description": "Check the components for which you want to select Home Assistant entity overrides. The selected entities are then periodically published to Joulzen and used there for display and optimisation.",
         "data": {
-          "select_grid": "Grid",
-          "select_energyCommunity": "Energy Community",
-          "select_pv": "Solar PV",
-          "select_battery": "Battery",
-          "select_appliance": "Appliance",
-          "select_heater": "Heat Pump / Heater",
-          "select_districtHeating": "District Heating",
-          "select_joulzenTank": "Joulzen Tank",
-          "select_tankLayer": "Tank Layer",
-          "select_thermostat": "Thermostat",
-          "select_ev": "Electric Vehicle",
-          "select_weather": "Weather Station",
-          "select_heatingCircuit": "Heating Circuit",
+          "selected_components": "Components",
           "_back": "← Go back"
         }
       },
@@ -69,19 +57,7 @@
         "title": "Optional: Publish to Joulzen",
         "description": "Check the components for which you want to select Home Assistant entity overrides. The selected entities are then periodically published to Joulzen and used there for optimisation.",
         "data": {
-          "select_grid": "Grid",
-          "select_energyCommunity": "Energy Community",
-          "select_pv": "Solar PV",
-          "select_battery": "Battery",
-          "select_appliance": "Appliance",
-          "select_heater": "Heat Pump / Heater",
-          "select_districtHeating": "District Heating",
-          "select_joulzenTank": "Joulzen Tank",
-          "select_tankLayer": "Tank Layer",
-          "select_thermostat": "Thermostat",
-          "select_ev": "Electric Vehicle",
-          "select_weather": "Weather Station",
-          "select_heatingCircuit": "Heating Circuit",
+          "selected_components": "Components",
           "_back": "← Go back"
         }
       },
