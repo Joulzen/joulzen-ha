@@ -1,4 +1,4 @@
-# joulzen-ha
+# Joulzen for Home Assistant
 
 Home Assistant Integration for Joulzen (https://joulzen.at).
 
