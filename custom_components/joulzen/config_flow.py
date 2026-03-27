@@ -200,7 +200,7 @@ def _schema_step_type(
                 if agg_defaults else vol.Optional(f"{comp_id}_day")
             )
             schema_dict[agg_key] = section(
-                vol.Schema(agg_dict), {"collapsed": False}
+                vol.Schema(agg_dict), {"collapsed": True}
             )
 
     # Back button at the bottom
