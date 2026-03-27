@@ -82,3 +82,7 @@ Each component exposes two groups of fields: **live** readings (instantaneous po
 A **Joulzen** tab is automatically added to your Home Assistant sidebar with a live overview of all components in your household.
 
 ![Joulzen dashboard](docs/screenshot_dashboard.png)
+
+## Support
+Do you have questions or have feedback?
+Please reach out to [office@joulzen.at](mailto:office@joulzen.at)
