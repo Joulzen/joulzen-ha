@@ -563,7 +563,7 @@ class JoulzenConfigFlow(
             ),
         }
         return self.async_create_entry(
-            title="Joulzen MQTT Bridge", data=data
+            title="Joulzen Integration", data=data
         )
 
     @staticmethod
