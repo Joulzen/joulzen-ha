@@ -344,8 +344,14 @@ class JoulzenOAuth2Impl(LocalOAuth2Implementation):
             resp.raise_for_status()
             return await resp.json(content_type=None)
 
-    async def async_refresh_token(self, token: dict) -> dict:
-        """Refresh the access token using Basic auth, as Supabase requires."""
+    async def _async_refresh_token(self, token: dict) -> dict:
+        """Refresh the access token using Basic auth, as Supabase requires.
+
+        This is the hook Home Assistant calls from the public
+        `async_refresh_token`, which also stamps `expires_at` on the result.
+        Overriding the public method skipped that, so the stored `expires_at`
+        stayed in the past and every poll refreshed the token again.
+        """
         session = async_get_clientsession(self.hass)
         async with session.post(
             f"{SUPABASE_URL}/auth/v1/oauth/token",
